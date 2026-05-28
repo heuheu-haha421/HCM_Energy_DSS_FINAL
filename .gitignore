@@ -1,0 +1,10 @@
+.venv/
+venv/
+backend/venv/
+frontend/node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+backend/energy_dss.db
+backend/app/config/.env
+.env

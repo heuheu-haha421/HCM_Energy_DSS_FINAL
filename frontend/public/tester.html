@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EVN-DSS API Tester</title>
+  <style>
+    body { margin: 0; font-family: Inter, Arial, sans-serif; background: #0f172a; color: #e2e8f0; display: grid; grid-template-columns: 360px 1fr; height: 100vh; }
+    aside { background: #111827; border-right: 1px solid #334155; padding: 16px; overflow: auto; }
+    main { padding: 22px; overflow: auto; }
+    h1 { margin: 0 0 14px; font-size: 22px; }
+    h2 { margin: 22px 0 8px; font-size: 13px; color: #93c5fd; text-transform: uppercase; letter-spacing: .08em; }
+    button, input, textarea { font: inherit; }
+    .api { width: 100%; text-align: left; border: 1px solid #334155; background: #1f2937; color: #e2e8f0; border-radius: 8px; padding: 10px; margin-bottom: 8px; cursor: pointer; }
+    .api.active { background: #1d4ed8; border-color: #93c5fd; }
+    .method { font-weight: 800; margin-right: 8px; }
+    .GET { color: #86efac; } .POST { color: #93c5fd; } .PUT { color: #fbbf24; } .DELETE { color: #fca5a5; }
+    label { display: block; margin: 14px 0 6px; color: #cbd5e1; font-weight: 700; }
+    input, textarea { width: 100%; box-sizing: border-box; border-radius: 8px; border: 1px solid #475569; background: #020617; color: #e2e8f0; padding: 10px; }
+    textarea { min-height: 260px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .card { background: #111827; border: 1px solid #334155; border-radius: 10px; padding: 16px; }
+    .run { margin-top: 14px; background: #2563eb; color: white; border: 0; border-radius: 8px; padding: 11px 16px; font-weight: 800; cursor: pointer; }
+    pre { background: #020617; border: 1px solid #334155; border-radius: 10px; padding: 14px; overflow: auto; min-height: 240px; }
+  </style>
+</head>
+<body>
+  <aside>
+    <h1>EVN-DSS API Tester</h1>
+    <label>Base URL</label>
+    <input id="baseUrl" value="/api/v1" />
+    <label>JWT Bearer Token</label>
+    <input id="token" placeholder="paste access_token after login" />
+    <div id="apiList"></div>
+  </aside>
+  <main>
+    <div class="card">
+      <h1 id="title">Select an API</h1>
+      <div id="endpoint"></div>
+      <div id="pathParams"></div>
+      <div id="fileBox"></div>
+      <label>Payload / Query Params</label>
+      <textarea id="payload">{}</textarea>
+      <button class="run" onclick="callApi()">RUN REQUEST</button>
+    </div>
+    <h2>Response</h2>
+    <pre id="response">{}</pre>
+  </main>
+
+  <script>
+    const apis = [
+      { group: 'Auth', name: 'POST /auth/login', method: 'POST', endpoint: '/auth/login', payload: { username: 'admin', password: 'admin123' } },
+      { group: 'Auth', name: 'GET /auth/me', method: 'GET', endpoint: '/auth/me', payload: {} },
+      { group: 'Auth', name: 'POST /auth/register', method: 'POST', endpoint: '/auth/register', payload: { username: 'newuser', password: '123456', role: 'user' } },
+      { group: 'Auth', name: 'PUT /auth/{user_id}/change-password', method: 'PUT', endpoint: '/auth/{user_id}/change-password', pathParams: { user_id: 1 }, payload: { old_password: 'admin123', new_password: 'newadmin123' } },
+      { group: 'Auth', name: 'DELETE /auth/{user_id}/delete-account', method: 'DELETE', endpoint: '/auth/{user_id}/delete-account', pathParams: { user_id: 3 }, payload: {} },
+
+      { group: 'Simulation', name: 'GET /simulation/current-load', method: 'GET', endpoint: '/simulation/current-load', payload: {} },
+      { group: 'Simulation', name: 'POST /simulation/allocate', method: 'POST', endpoint: '/simulation/allocate', payload: { year: 2026, weights: { residential: 0.15, industrial: 0.50, commercial: 0.05, services: 0.30 } } },
+      { group: 'Simulation', name: 'GET /simulation/grid-stress-priorities', method: 'GET', endpoint: '/simulation/grid-stress-priorities', payload: { year: 2026, limit: 10 } },
+
+      { group: 'Data', name: 'GET /data/status', method: 'GET', endpoint: '/data/status', payload: {} },
+      { group: 'Data', name: 'POST /data/energy-data', method: 'POST', endpoint: '/data/energy-data', payload: { data: [{ week: '2026-W01', start_date: '2026-01-01', end_date: '2026-01-07', total_load_kwh: 123456789, pmax_mw: 1200, pmin_mw: 800, source: 'demo' }] } },
+      { group: 'Data', name: 'POST /data/upload-energy', method: 'POST', endpoint: '/data/upload-energy', upload: true, fileField: 'file', payload: {} },
+      { group: 'Data', name: 'POST /data/upload-ward-stats', method: 'POST', endpoint: '/data/upload-ward-stats', upload: true, fileField: 'file', payload: {} },
+      { group: 'Data', name: 'POST /data/upload-holiday', method: 'POST', endpoint: '/data/upload-holiday', upload: true, fileField: 'file', payload: {} },
+
+      { group: 'Models', name: 'GET /models/', method: 'GET', endpoint: '/models/', payload: {} },
+      { group: 'Models', name: 'GET /models/active', method: 'GET', endpoint: '/models/active', payload: {} },
+      { group: 'Models', name: 'POST /models/', method: 'POST', endpoint: '/models/', upload: true, fileField: 'model_file', formFields: { max_depth: 5, min_child_weight: 2, mae: 46926751.56, mape: 4.66, rmse: 54653449.14, r2: 0.8, is_best: 1, is_active: 1 }, payload: { max_depth: 5, min_child_weight: 2, mae: 46926751.56, mape: 4.66, rmse: 54653449.14, r2: 0.8, is_best: 1, is_active: 1 } },
+      { group: 'Models', name: 'POST /models/{model_id}/set-active', method: 'POST', endpoint: '/models/{model_id}/set-active', pathParams: { model_id: 1 }, payload: {} },
+      { group: 'Models', name: 'GET /models/{model_id}/metrics', method: 'GET', endpoint: '/models/{model_id}/metrics', pathParams: { model_id: 1 }, payload: {} },
+      { group: 'Models', name: 'GET /models/{model_id}/acceptance-graph', method: 'GET', endpoint: '/models/{model_id}/acceptance-graph', pathParams: { model_id: 1 }, payload: {} },
+      { group: 'Models', name: 'GET /models/compare', method: 'GET', endpoint: '/models/compare', payload: { ids: '1,2' } },
+
+      { group: 'Prediction', name: 'POST /prediction/start', method: 'POST', endpoint: '/prediction/start', payload: {} },
+      { group: 'Prediction', name: 'POST /prediction/stop', method: 'POST', endpoint: '/prediction/stop', payload: {} },
+      { group: 'Prediction', name: 'POST /prediction/restart', method: 'POST', endpoint: '/prediction/restart', payload: {} },
+
+      { group: 'Scenarios', name: 'GET /scenarios/', method: 'GET', endpoint: '/scenarios/', payload: {} },
+      { group: 'Scenarios', name: 'POST /scenarios/', method: 'POST', endpoint: '/scenarios/', payload: { weight: { w_residential: 0.15, w_industrial: 0.50, w_commercial: 0.05, w_services: 0.30 }, created_by: 1 } },
+      { group: 'Scenarios', name: 'PUT /scenarios/{scenario_id}', method: 'PUT', endpoint: '/scenarios/{scenario_id}', pathParams: { scenario_id: 1 }, payload: { weight: { w_residential: 0.25, w_industrial: 0.45, w_commercial: 0.10, w_services: 0.20 } } },
+      { group: 'Scenarios', name: 'DELETE /scenarios/{scenario_id}', method: 'DELETE', endpoint: '/scenarios/{scenario_id}', pathParams: { scenario_id: 1 }, payload: {} },
+      { group: 'Scenarios', name: 'POST /scenarios/{scenario_id}/apply', method: 'POST', endpoint: '/scenarios/{scenario_id}/apply', pathParams: { scenario_id: 1 }, payload: {} },
+
+      { group: 'GeoJSON', name: 'GET /geojson/wards', method: 'GET', endpoint: '/geojson/wards', payload: {} },
+      { group: 'Demo', name: 'POST /demo/toggle', method: 'POST', endpoint: '/demo/toggle', payload: { is_demo: true, interval_seconds: 10 } },
+
+      { group: 'Dev Delete', name: 'DELETE /dev/delete/predictions', method: 'DELETE', endpoint: '/dev/delete/predictions', payload: {} },
+      { group: 'Dev Delete', name: 'DELETE /dev/delete/wards', method: 'DELETE', endpoint: '/dev/delete/wards', payload: {} }
+    ];
+
+    let selected = null;
+
+    function renderList() {
+      const root = document.getElementById('apiList');
+      root.innerHTML = '';
+      let group = '';
+      apis.forEach((api, index) => {
+        if (api.group !== group) {
+          group = api.group;
+          const h = document.createElement('h2');
+          h.textContent = group;
+          root.appendChild(h);
+        }
+        const btn = document.createElement('button');
+        btn.className = 'api';
+        btn.innerHTML = `<span class="method ${api.method}">${api.method}</span>${api.endpoint}`;
+        btn.onclick = () => selectApi(index);
+        root.appendChild(btn);
+      });
+    }
+
+    function selectApi(index) {
+      selected = apis[index];
+      document.querySelectorAll('.api').forEach((b, i) => b.classList.toggle('active', i === index));
+      document.getElementById('title').textContent = selected.name;
+      document.getElementById('endpoint').textContent = `${selected.method} ${selected.endpoint}`;
+      document.getElementById('payload').value = JSON.stringify(selected.payload || {}, null, 2);
+      renderPathParams();
+      renderFileInput();
+    }
+
+    function renderPathParams() {
+      const box = document.getElementById('pathParams');
+      box.innerHTML = '';
+      if (!selected?.pathParams) return;
+      Object.entries(selected.pathParams).forEach(([key, value]) => {
+        box.insertAdjacentHTML('beforeend', `<label>${key}</label><input id="path_${key}" value="${value}">`);
+      });
+    }
+
+    function renderFileInput() {
+      const box = document.getElementById('fileBox');
+      box.innerHTML = '';
+      if (selected?.upload) box.innerHTML = '<label>File</label><input id="fileInput" type="file">';
+    }
+
+    function buildEndpoint() {
+      let endpoint = selected.endpoint;
+      if (selected.pathParams) {
+        Object.keys(selected.pathParams).forEach(key => {
+          endpoint = endpoint.replace(`{${key}}`, encodeURIComponent(document.getElementById(`path_${key}`).value));
+        });
+      }
+      return endpoint;
+    }
+
+    async function callApi() {
+      if (!selected) return;
+      const base = document.getElementById('baseUrl').value.replace(/\/$/, '');
+      const token = document.getElementById('token').value.trim();
+      const payload = JSON.parse(document.getElementById('payload').value || '{}');
+      let url = base + buildEndpoint();
+      const headers = {};
+      const options = { method: selected.method, headers };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      if (selected.method === 'GET') {
+        const params = new URLSearchParams(payload);
+        if ([...params].length) url += `?${params}`;
+      } else if (selected.upload) {
+        const fd = new FormData();
+        const file = document.getElementById('fileInput')?.files?.[0];
+        if (!file) throw new Error('Choose a file first');
+        fd.append(selected.fileField || 'file', file);
+        Object.entries(selected.formFields || payload || {}).forEach(([key, value]) => fd.append(key, value));
+        options.body = fd;
+      } else {
+        headers['Content-Type'] = 'application/json';
+        options.body = JSON.stringify(payload);
+      }
+
+      const res = await fetch(url, options);
+      const type = res.headers.get('content-type') || '';
+      const data = type.includes('json') ? await res.json() : await res.text();
+      document.getElementById('response').textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+    }
+
+    renderList();
+    selectApi(0);
+  </script>
+</body>
+</html>

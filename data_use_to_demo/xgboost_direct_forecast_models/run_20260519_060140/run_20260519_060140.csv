@@ -1,0 +1,2 @@
+max_depth,min_child_weight,mae,mape,rmse,r2,model_path
+3,1,108964994.23529412,11.433237878414076,143434101.8842066,0.10043215711540732,xgboost_direct_forecast_models/run_20260519_060140/xgboost.json
